@@ -19,11 +19,20 @@ from typing import TYPE_CHECKING
 
 from twisted.web.resource import Resource
 
+from synapse.rest.synapse.mas.devices import (
+    MasCreateDeviceResource,
+    MasSyncDevicesResource,
+    MasUpdateDeviceDisplayNameResource,
+)
 from synapse.rest.synapse.mas.users import (
+    MasAllowCrossSigningResetResource,
     MasDeleteUserResource,
     MasIsLocalpartAvailableResource,
     MasProvisionUserResource,
     MasQueryUserResource,
+    MasReactivateUserResource,
+    MasSetDisplayNameResource,
+    MasUnsetDisplayNameResource,
 )
 
 if TYPE_CHECKING:
@@ -40,14 +49,14 @@ class MasResource(Resource):
         self.putChild(b"provision_user", MasProvisionUserResource(hs))
         self.putChild(b"is_localpart_available", MasIsLocalpartAvailableResource(hs))
         self.putChild(b"delete_user", MasDeleteUserResource(hs))
-        # self.putChild(b"create_device", MasCreateDeviceResource(hs))
-        # self.putChild(
-        # b"update_device_display_name", MasUpdateDeviceDisplayNameResource(hs)
-        # )
-        # self.putChild(b"sync_devices", MasSyncDevicesResource(hs))
-        # self.putChild(b"reactivate_user", MasReactivateUserResource(hs))
-        # self.putChild(b"set_displayname", MasSetDisplayNameResource(hs))
-        # self.putChild(b"unset_displayname", MasUnsetDisplayNameResource(hs))
-        # self.putChild(
-        # b"allow_cross_signing_reset", MasAllowCrossSigningResetResource(hs)
-        # )
+        self.putChild(b"create_device", MasCreateDeviceResource(hs))
+        self.putChild(
+            b"update_device_display_name", MasUpdateDeviceDisplayNameResource(hs)
+        )
+        self.putChild(b"sync_devices", MasSyncDevicesResource(hs))
+        self.putChild(b"reactivate_user", MasReactivateUserResource(hs))
+        self.putChild(b"set_displayname", MasSetDisplayNameResource(hs))
+        self.putChild(b"unset_displayname", MasUnsetDisplayNameResource(hs))
+        self.putChild(
+            b"allow_cross_signing_reset", MasAllowCrossSigningResetResource(hs)
+        )

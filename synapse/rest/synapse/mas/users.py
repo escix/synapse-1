@@ -18,7 +18,7 @@ from http import HTTPStatus
 from typing import TYPE_CHECKING, Any, Optional, Tuple
 
 from synapse._pydantic_compat import BaseModel, StrictBool, StrictStr, root_validator
-from synapse.api.errors import SynapseError
+from synapse.api.errors import NotFoundError, SynapseError
 from synapse.http.servlet import (
     parse_and_validate_json_object_from_request,
     parse_string,
@@ -78,6 +78,7 @@ class MasProvisionUserResource(MasBaseResource):
         self.registration_handler = hs.get_registration_handler()
         self.identity_handler = hs.get_identity_handler()
         self.auth_handler = hs.get_auth_handler()
+        self.profile_handler = hs.get_profile_handler()
         self.clock = hs.get_clock()
         self.auth = hs.get_auth()
 
@@ -128,10 +129,21 @@ class MasProvisionUserResource(MasBaseResource):
             )
         else:
             created = False
+            requester = create_requester(user_id=user_id)
             if body.unset_displayname:
-                await self.store.set_profile_displayname(user_id, None)
+                await self.profile_handler.set_displayname(
+                    target_user=user_id,
+                    requester=requester,
+                    new_displayname="",
+                    by_admin=True,
+                )
             elif body.set_displayname is not None:
-                await self.store.set_profile_displayname(user_id, body.set_displayname)
+                await self.profile_handler.set_displayname(
+                    target_user=user_id,
+                    requester=requester,
+                    new_displayname=body.set_displayname,
+                    by_admin=True,
+                )
 
             new_email_list: Optional[set[str]] = None
             if body.unset_emails:
@@ -223,5 +235,115 @@ class MasDeleteUserResource(MasBaseResource):
             erase_data=body.erase,
             requester=create_requester(user_id=user_id),
         )
+
+        return HTTPStatus.OK, {}
+
+
+class MasReactivateUserResource(MasBaseResource):
+    def __init__(self, hs: "HomeServer"):
+        MasBaseResource.__init__(self, hs)
+
+        self.deactivate_account_handler = hs.get_deactivate_account_handler()
+
+    class PostBody(BaseModel):
+        localpart: StrictStr
+
+    async def _async_render_POST(
+        self, request: "SynapseRequest"
+    ) -> Tuple[int, JsonDict]:
+        self.assert_mas_request(request)
+
+        body = parse_and_validate_json_object_from_request(request, self.PostBody)
+        user_id = UserID(body.localpart, self.hostname)
+
+        await self.deactivate_account_handler.activate_account(
+            user_id=user_id.to_string(),
+        )
+
+        return HTTPStatus.OK, {}
+
+
+class MasSetDisplayNameResource(MasBaseResource):
+    def __init__(self, hs: "HomeServer"):
+        MasBaseResource.__init__(self, hs)
+
+        self.profile_handler = hs.get_profile_handler()
+
+    class PostBody(BaseModel):
+        localpart: StrictStr
+        displayname: StrictStr
+
+    async def _async_render_POST(
+        self, request: "SynapseRequest"
+    ) -> Tuple[int, JsonDict]:
+        self.assert_mas_request(request)
+
+        body = parse_and_validate_json_object_from_request(request, self.PostBody)
+        user_id = UserID(body.localpart, self.hostname)
+        requester = create_requester(user_id=user_id)
+
+        await self.profile_handler.set_displayname(
+            target_user=user_id,
+            requester=requester,
+            new_displayname=body.displayname,
+        )
+
+        return HTTPStatus.OK, {}
+
+
+class MasUnsetDisplayNameResource(MasBaseResource):
+    def __init__(self, hs: "HomeServer"):
+        MasBaseResource.__init__(self, hs)
+
+        self.profile_handler = hs.get_profile_handler()
+
+    class PostBody(BaseModel):
+        localpart: StrictStr
+
+    async def _async_render_POST(
+        self, request: "SynapseRequest"
+    ) -> Tuple[int, JsonDict]:
+        self.assert_mas_request(request)
+
+        body = parse_and_validate_json_object_from_request(request, self.PostBody)
+        user_id = UserID(body.localpart, self.hostname)
+        requester = create_requester(user_id=user_id)
+
+        await self.profile_handler.set_displayname(
+            target_user=user_id,
+            requester=requester,
+            new_displayname="",
+        )
+
+        return HTTPStatus.OK, {}
+
+
+class MasAllowCrossSigningResetResource(MasBaseResource):
+    REPLACEMENT_PERIOD_MS = 10 * 60 * 1000  # 10 minutes
+
+    def __init__(self, hs: "HomeServer"):
+        MasBaseResource.__init__(self, hs)
+
+    class PostBody(BaseModel):
+        localpart: StrictStr
+        password: StrictStr
+
+    async def _async_render_POST(
+        self, request: "SynapseRequest"
+    ) -> Tuple[int, JsonDict]:
+        self.assert_mas_request(request)
+
+        body = parse_and_validate_json_object_from_request(request, self.PostBody)
+        user_id = UserID(body.localpart, self.hostname)
+
+        timestamp = (
+            await self.store.allow_master_cross_signing_key_replacement_without_uia(
+                user_id=str(user_id),
+                duration_ms=self.REPLACEMENT_PERIOD_MS,
+            )
+        )
+
+        if timestamp is None:
+            raise NotFoundError("User has no master cross-signing key")
 
         return HTTPStatus.OK, {}
