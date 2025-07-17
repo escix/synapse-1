@@ -238,6 +238,7 @@ information.
     ^/_matrix/client/unstable/im.nheko.summary/summary/.*$
     ^/_matrix/client/(r0|v3|unstable)/account/3pid$
     ^/_matrix/client/(r0|v3|unstable)/account/whoami$
+    ^/_matrix/client/(r0|v3)/delete_devices$
     ^/_matrix/client/(api/v1|r0|v3|unstable)/devices(/|$)
     ^/_matrix/client/versions$
     ^/_matrix/client/(api/v1|r0|v3|unstable)/voip/turnServer$
@@ -556,6 +557,7 @@ The `device_lists` stream supports multiple writers. The following endpoints
 can be handled by any worker, but should be routed directly one of the workers
 configured as stream writer for the `device_lists` stream:
 
+    ^/_matrix/client/(r0|v3)/delete_devices$
     ^/_matrix/client/(api/v1|r0|v3|unstable)/devices/
     ^/_matrix/client/(r0|v3|unstable)/keys/upload
     ^/_matrix/client/(api/v1|r0|v3|unstable/keys/device_signing/upload$

@@ -160,6 +160,7 @@ class DeviceHandler:
         # The main logic update is that the DeviceListUpdater is now only
         # instantiated on the first device list writer, and a few methods that
         # were safe to move to any worker were moved to the DeviceListWorkerUpdater
+        # This must be kept in sync with DeviceListWorkerUpdater
         self._main_device_list_writer = hs.config.worker.writers.device_lists[0]
 
         self._notify_device_update_client = (
@@ -989,7 +990,12 @@ class DeviceWriterHandler(DeviceHandler):
         self._handle_new_device_update_new_data = False
 
         # Only the main device list writer handles device list EDUs and converts
-        # device list updates to outbound federation pokes.
+        # device list updates to outbound federation pokes. This allows us to
+        # use in-memory per-user locks instead of cross-worker locks, and
+        # simplifies the logic for converting outbound pokes. This makes the
+        # device_list writers a little bit unbalanced in terms of load, but
+        # still unlocks local device changes (and therefore login/logouts) when
+        # rolling-restarting Synapse.
         if self._is_main_device_list_writer:
             # On start up check if there are any updates pending.
             hs.get_reactor().callWhenRunning(self._handle_new_device_update_async)
@@ -1090,6 +1096,16 @@ class DeviceWriterHandler(DeviceHandler):
             return
 
         self._handle_new_device_update_is_processing = True
+
+        # Note that this logic only deals with the minimum stream ID, and not
+        # the full stream token. This means that oubound pokes are only sent
+        # once every writer on the device_lists stream has caught up. This is
+        # fine, it may only introduces a bit of lag on the outbound pokes.
+        # To fix this, 'device_lists_changes_converted_stream_position' would
+        # need to include the full stream token instead of just a stream ID.
+        # We could also consider have each writer converting their own device
+        # list updates, but that can quickly become complex to handle changes in
+        # the list of device writers.
 
         # The stream ID we processed previous iteration (if any), and the set of
         # hosts we've already poked about for this update. This is so that we
@@ -1312,6 +1328,8 @@ class DeviceListWorkerUpdater:
     def __init__(self, hs: "HomeServer"):
         self.store = hs.get_datastores().main
         self._notifier = hs.get_notifier()
+        # On which instance the DeviceListUpdater is running
+        # Must be kept in sync with DeviceHandler
         self._main_device_list_writer = hs.config.worker.writers.device_lists[0]
         self._multi_user_device_resync_client = (
             ReplicationMultiUserDevicesResyncRestServlet.make_client(hs)
@@ -1440,6 +1458,7 @@ class DeviceListUpdater(DeviceListWorkerUpdater):
         # resyncs.
         self._seen_updates: ExpiringCache[str, Set[str]] = ExpiringCache(
             cache_name="device_update_edu",
+            server_name=self.server_name,
             clock=self.clock,
             max_len=10000,
             expiry_ms=30 * 60 * 1000,
